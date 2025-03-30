@@ -34,5 +34,5 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 llm = Ollama(model="deepseek-r1", request_timeout=120.0)
 
 
-prompt = "Answer this question: What is the capital of India?\nAnswer:"
+prompt = "Answer this question: What is the financial capital of India?\nAnswer:"
 answer = llm.generate(prompt, max_tokens=150)
