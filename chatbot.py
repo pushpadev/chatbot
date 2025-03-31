@@ -20,9 +20,10 @@ nltk.download('punkt_tab')
 
 
 # 1. Preprocessing functions
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('english'))
+
 def preprocess_text(text):
-    lemmatizer = WordNetLemmatizer()
-    stop_words = set(stopwords.words('english'))
     tokens = word_tokenize(text.lower())
     filtered = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words and word.isalnum()]
     return ' '.join(filtered)
@@ -35,6 +36,7 @@ def extract_question_type(question):
         return 'other'
 
 # 2. Load and prepare data
+@st.cache_data
 def load_data(file_path):
     filename = file_path.name  # get the filename as a string
     if filename.endswith('.csv'):
@@ -43,6 +45,10 @@ def load_data(file_path):
         df = pd.read_excel(file_path)
     else:
         raise ValueError("Unsupported file format")
+    
+    # Check required columns
+    if not all(col in df.columns for col in ['Question', 'Answer']):
+        raise ValueError("File must contain 'Question' and 'Answer' columns")
     
     documents = []
     for _, row in df.iterrows():
@@ -61,25 +67,33 @@ def create_vector_store(docs):
     vector_store = FAISS.from_documents(docs, embeddings)
     return vector_store
 
-# 4. Retrieve answers with type prioritization
-def get_answer(query, vector_store, llm, threshold=0.5):
-    # Preprocess query
+# 4. Retrieve answers with type prioritization + threading
+def get_answer(query, vector_store, llm):
     processed_query = preprocess_text(query)
     q_type = extract_question_type(query)
     
-    # Search with metadata filtering (approximate)
-    docs = vector_store.similarity_search(processed_query, k=5)
+    # Search with score threshold
+    docs = vector_store.similarity_search_with_score(processed_query, k=5)
+    filtered_docs = [doc for doc, score in docs if score < 0.3 and doc.metadata['type'] == q_type]
     
-    # Prioritize same question type
-    filtered_docs = [doc for doc in docs if doc.metadata['type'] == q_type]
     if not filtered_docs:
-        filtered_docs = docs  # Fallback to all
+        filtered_docs = [doc for doc, score in docs if score < 0.5]
     
-    # Get top answer
-    context = "\n".join([d.metadata['answer'] for d in filtered_docs[:3]])
-    prompt = f"Answer this {q_type} question: {query}\nContext:\n{context}\nAnswer:"
-    answer = llm.generate(prompt, max_tokens=150)
-    return answer
+    # Better context formatting
+    context = "\n".join([f"Q: {d.metadata['original_question']}\nA: {d.metadata['answer']}" for d in filtered_docs[:3]])
+    
+    # Enhanced prompt
+    prompt = f"""
+    Answer this {q_type} question using the context below:
+    
+    Context:
+    {context}
+
+    Question: {query}
+    Answer clearly and concisely.
+    """
+    
+    return llm.generate(prompt, temp=0.1, max_tokens=250)
 
 # 5. Streamlit App
 def main():
@@ -90,11 +104,12 @@ def main():
     if uploaded_file:
         docs = load_data(uploaded_file)
         vector_store = create_vector_store(docs)
-        llm = GPT4All(model_name="DeepSeek-R1-Distill-Qwen-1.5B-Q4_0.gguf")
+        llm = GPT4All(model_name="Phi-3-mini-4k-instruct.Q4_0.gguf")
         
         query = st.text_input("Ask a question:")
         if query:
-            answer = get_answer(query, vector_store, llm)
+            with st.spinner("Analyzing your question..."):
+                answer = get_answer(query, vector_store, llm)
             st.subheader("Answer:")
             st.write(answer)
 
