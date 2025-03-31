@@ -6,18 +6,18 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 from gpt4all import GPT4All
-from langchain.vectorstores import FAISS
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
 import os
 
-os.environ['NLTK_DATA'] = 'C:/Users/Hi/AppData/Roaming/nltk_data'
+# os.environ['NLTK_DATA'] = 'C:/Users/Hi/AppData/Roaming/nltk_data'
 
-# Download NLTK resources
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
-nltk.download('punkt_tab')
+# # Download NLTK resources
+# nltk.download('punkt')
+# nltk.download('stopwords')
+# nltk.download('wordnet')
+# nltk.download('punkt_tab')
 
 # Initialize session state
 if 'messages' not in st.session_state:
