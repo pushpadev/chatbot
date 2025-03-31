@@ -2,6 +2,9 @@
 
 A conversational AI assistant powered by local language models (GPT4All) with contextual understanding from custom Q&A datasets.
 
+![image](https://github.com/user-attachments/assets/78c07206-391c-4ef5-ac3f-255b2582924b)
+
+
 ## Installation
 
 1. **Create and activate virtual environment**:
