@@ -24,12 +24,10 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'processing' not in st.session_state:
     st.session_state.processing = False
-if 'start_time' not in st.session_state:
-    st.session_state.start_time = None
-if 'timeout' not in st.session_state:
-    st.session_state.timeout = 120
 if 'vector_store' not in st.session_state:
     st.session_state.vector_store = None
+if 'pending_question' not in st.session_state:
+    st.session_state.pending_question = None
 
 # Preprocessing functions
 lemmatizer = WordNetLemmatizer()
@@ -98,16 +96,41 @@ def get_answer(query, vector_store, llm):
     
     return llm.generate(prompt, temp=0.1, max_tokens=250)
 
-# Timer formatting
-def format_countdown(seconds):
-    abs_seconds = abs(seconds)
-    return f"{'-' if seconds < 0 else ''}{int(abs_seconds // 60):02d}:{int(abs_seconds % 60):02d}"
-
 # Main app
 def main():
     st.set_page_config(layout="wide")
     st.title("🤖 Smart Q&A Chat Assistant")
     
+    # Add custom CSS for typing animation
+    st.markdown("""
+    <style>
+    .typing-indicator {
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+    .typing-indicator span {
+        animation: typing 1s infinite;
+        display: inline-block;
+    }
+    .typing-indicator span:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+    .typing-indicator span:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+    .est-time {
+        color: #666;
+        font-size: 0.9em;
+        margin-top: 8px;
+    }
+    @keyframes typing {
+        0% { opacity: 0.3; }
+        50% { opacity: 1; }
+        100% { opacity: 0.3; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Create layout columns
     main_col, side_col = st.columns([4, 1])
 
@@ -144,72 +167,67 @@ def main():
                         unsafe_allow_html=True
                     )
             else:
+                response_time = msg.get('response_time')
+                time_text = f"<small style='color:gray;'>⏱ {response_time:.1f}s</small>" if response_time else ""
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    time_color = "red" if msg['remaining'] < 0 else "gray"
-                    time_text = f"⏱ {msg['time_taken']} (Timeout: {msg['timeout']}s)"
                     st.markdown(
                         f"<div style='background-color:#f0f0f0; padding:12px; border-radius:15px; "
                         f"margin:8px 0; box-shadow:0 2px 4px rgba(0,0,0,0.1);'>"
-                        f"🤖 <b>Assistant</b><br>{msg['content']}<br>"
-                        f"<small style='color:{time_color};'>{time_text}</small></div>", 
+                        f"🤖 <b>Assistant</b><br>{msg['content']}<br>{time_text}</div>", 
                         unsafe_allow_html=True
                     )
 
-        # Timer and input section
-        timer_placeholder = st.empty()
-        if st.session_state.vector_store:
-            query = st.chat_input("Type your question here...")
-            if query and not st.session_state.processing:
-                st.session_state.processing = True
-                st.session_state.start_time = time.time()
-                st.session_state.messages.append({'type': 'user', 'content': query})
-                
-                try:
-                    # Show initial timer
-                    with timer_placeholder.container():
-                        st.markdown("<div style='text-align: center; margin: 20px; color: #666;'>"
-                                   "⏳ Starting processing...</div>", unsafe_allow_html=True)
-                    
-                    # Process question
-                    answer = get_answer(query, st.session_state.vector_store, st.session_state.llm)
-                    
-                    # Calculate timing
-                    elapsed = time.time() - st.session_state.start_time
-                    remaining = st.session_state.timeout - elapsed
-                    time_str = format_countdown(remaining)
-                    
-                    # Store message with timing info
-                    st.session_state.messages.append({
-                        'type': 'bot',
-                        'content': answer,
-                        'time_taken': f"{elapsed:.1f}s",
-                        'timeout': st.session_state.timeout,
-                        'remaining': remaining
-                    })
-                    
-                    # Handle timeout
-                    if remaining < 0:
-                        st.session_state.timeout += 60
-                        st.error(f"⏰ Timeout exceeded! New timeout set to {st.session_state.timeout//60} minutes")
-                    
-                finally:
-                    st.session_state.processing = False
-                    st.session_state.start_time = None
-                    timer_placeholder.empty()
-                    st.rerun()
+        # Show typing indicator while processing
+        if st.session_state.pending_question:
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(
+                    f"<div style='background-color:#f0f0f0; padding:12px; border-radius:15px; "
+                    f"margin:8px 0; box-shadow:0 2px 4px rgba(0,0,0,0.1);'>"
+                    f"🤖 <b>Assistant</b><br>"
+                    f"<div class='typing-indicator'>"
+                    f"<span>.</span><span>.</span><span>.</span>"
+                    f"</div>"
+                    f"<div class='est-time'>This may take 60-120 seconds. Please wait...</div></div>", 
+                    unsafe_allow_html=True
+                )
 
-        # Update live timer
-        if st.session_state.processing and st.session_state.start_time:
-            elapsed = time.time() - st.session_state.start_time
-            remaining = st.session_state.timeout - elapsed
-            time_color = "red" if remaining < 0 else "green"
-            time_str = format_countdown(remaining)
+        # Input handling - only show when no pending question
+        if st.session_state.vector_store and not st.session_state.pending_question:
+            query = st.chat_input("Type your question here...")
+            if query:
+                # Immediately add user question to messages
+                st.session_state.messages.append({
+                    'type': 'user',
+                    'content': query,
+                    'timestamp': time.time()
+                })
+                st.session_state.pending_question = query
+                st.rerun()
+
+        # Process pending question after rerun
+        if st.session_state.pending_question and not st.session_state.processing:
+            st.session_state.processing = True
+            query = st.session_state.pending_question
+            start_time = time.time()
             
-            with timer_placeholder.container():
-                st.markdown(f"<div style='text-align: center; margin: 20px; color: {time_color};'>"
-                            f"⏳ Time remaining: {time_str}</div>", 
-                            unsafe_allow_html=True)
+            try:
+                # Generate answer
+                answer = get_answer(query, st.session_state.vector_store, st.session_state.llm)
+                response_time = time.time() - start_time
+                
+                # Add assistant response
+                st.session_state.messages.append({
+                    'type': 'bot',
+                    'content': answer,
+                    'response_time': response_time
+                })
+                
+            finally:
+                st.session_state.processing = False
+                st.session_state.pending_question = None
+                st.rerun()
 
 if __name__ == "__main__":
     main()
