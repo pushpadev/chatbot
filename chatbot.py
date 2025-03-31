@@ -22,10 +22,12 @@ nltk.download('punkt_tab')
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
-if 'timeout' not in st.session_state:
-    st.session_state.timeout = 120  # Initial timeout in seconds
 if 'processing' not in st.session_state:
     st.session_state.processing = False
+if 'start_time' not in st.session_state:
+    st.session_state.start_time = None
+if 'timeout' not in st.session_state:
+    st.session_state.timeout = 120  # Initial timeout in seconds
 
 # 1. Preprocessing functions
 lemmatizer = WordNetLemmatizer()
@@ -98,9 +100,17 @@ def get_answer(query, vector_store, llm):
     
     return llm.generate(prompt, temp=0.1, max_tokens=250)
 
+# Timer functions
+def format_countdown(seconds):
+    abs_seconds = abs(seconds)
+    minutes = int(abs_seconds // 60)
+    seconds = int(abs_seconds % 60)
+    sign = '-' if seconds < 0 else ''
+    return f"{sign}{minutes:02d}:{seconds:02d}"
+
 # 5. Streamlit App
 def main():
-    st.title("Q&A Chat with Contextual Understanding")
+    st.title("Q&A Chat with Live Countdown Timer")
     
     # Display chat messages
     for msg in st.session_state.messages:
@@ -112,7 +122,8 @@ def main():
         else:
             col1, col2 = st.columns([4,1])
             with col1:
-                st.markdown(f"<div style='background-color:#E8F4FD; padding:10px; border-radius:10px; margin:5px;'>🤖 {msg['content']}</div>", 
+                content = f"🤖 {msg['content']}<br><div style='color: {msg['color']}; font-size: 0.8em;'>⏱ {msg['time']}</div>"
+                st.markdown(f"<div style='background-color:#E8F4FD; padding:10px; border-radius:10px; margin:5px;'>{content}</div>", 
                            unsafe_allow_html=True)
     
     # File uploader
@@ -124,38 +135,61 @@ def main():
             st.session_state.llm = GPT4All(model_name="Phi-3-mini-4k-instruct.Q4_0.gguf")
             st.success("Data loaded successfully!")
     
-    # Chat input
+    # Chat input and timer
+    timer_placeholder = st.empty()
     if 'vector_store' in st.session_state:
         query = st.chat_input("Ask a question:")
         if query and not st.session_state.processing:
             st.session_state.processing = True
-            start_time = time.time()
+            st.session_state.start_time = time.time()
             
             # Add user message
             st.session_state.messages.append({'type': 'user', 'content': query})
             
             # Process question
-            with st.spinner("Analyzing your question..."):
-                try:
-                    answer = get_answer(query, st.session_state.vector_store, st.session_state.llm)
-                    elapsed_time = time.time() - start_time
-                    
-                    # Check response time
-                    time_color = "red" if elapsed_time > st.session_state.timeout else "green"
-                    time_message = f"Response time: {elapsed_time:.2f}s (Timeout: {st.session_state.timeout}s)"
-                    
-                    # Add bot message
-                    st.session_state.messages.append({'type': 'bot', 'content': answer})
-                    
-                    # Handle timeout
-                    if elapsed_time > st.session_state.timeout:
-                        st.session_state.timeout += 60  # Increase timeout by 1 minute
-                        st.error(f"Timeout exceeded! New timeout set to {st.session_state.timeout//60} minutes")
-                    
-                    # Rerun to update messages
-                    st.rerun()
-                finally:
-                    st.session_state.processing = False
+            try:
+                # Show initial timer
+                with timer_placeholder.container():
+                    st.markdown("<div style='text-align: center; margin: 20px;'>⏳ Timer starting...</div>", 
+                               unsafe_allow_html=True)
+                
+                answer = get_answer(query, st.session_state.vector_store, st.session_state.llm)
+                
+                # Calculate final time
+                elapsed_time = time.time() - st.session_state.start_time
+                remaining_time = 120 - elapsed_time
+                time_str = format_countdown(remaining_time)
+                color = "red" if remaining_time < 0 else "green"
+                
+                # Update timeout if exceeded
+                if remaining_time < 0:
+                    st.session_state.timeout += 60
+                
+                # Add bot message with timer
+                st.session_state.messages.append({
+                    'type': 'bot',
+                    'content': answer,
+                    'time': time_str,
+                    'color': color
+                })
+                
+            finally:
+                st.session_state.processing = False
+                st.session_state.start_time = None
+                timer_placeholder.empty()
+                st.rerun()
+
+    # Update timer during processing
+    if st.session_state.processing and st.session_state.start_time:
+        elapsed = time.time() - st.session_state.start_time
+        remaining = 120 - elapsed
+        time_str = format_countdown(remaining)
+        color = "red" if remaining < 0 else "black"
+        
+        with timer_placeholder.container():
+            st.markdown(f"<div style='text-align: center; color: {color}; margin: 20px;'>"
+                        f"⏳ Time remaining: {time_str}</div>", 
+                        unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
