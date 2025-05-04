@@ -4,7 +4,7 @@ Handles the user interface components and styles.
 """
 import streamlit as st
 import time
-from src.config import CHAT_TITLE
+from src.config import CHAT_TITLE, MAX_RESULTS
 
 def setup_ui():
     """Set up the title and add basic CSS."""
@@ -91,6 +91,22 @@ def show_file_uploader():
         
         if st.session_state.get('vector_store'):
             st.caption(f"✔️ Loaded {len(st.session_state.vector_store.index_to_docstore_id)} Q&A pairs")
+            
+            # Add number input for MAX_RESULTS - inside vector_store condition so it appears after file upload
+            st.header("⚙️ Settings")
+            max_results = st.number_input(
+                "Maximum results to return",
+                min_value=1,
+                max_value=10,
+                value=MAX_RESULTS,
+                step=1,
+                help="Maximum number of similar items to retrieve from the knowledge base"
+            )
+            
+            # Store the value in session state
+            if 'max_results' not in st.session_state or st.session_state.max_results != max_results:
+                st.session_state.max_results = max_results
+            
             if st.button("🗑️ Clear Data"):
                 st.session_state.clear()
                 st.rerun()

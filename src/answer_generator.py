@@ -1,6 +1,7 @@
 """
 Answer generation module for the chatbot application.
 """
+import streamlit as st
 from src.config import USE_GPT4ALL, MAX_RESULTS, SIMILARITY_THRESHOLD, TYPE_MATCH_THRESHOLD
 
 def get_answer(query, vector_store, llm, preprocessor):
@@ -20,6 +21,9 @@ def get_answer(query, vector_store, llm, preprocessor):
     from src.data_processor import preprocess_text, extract_question_type
     from src.vector_store import search_documents
     
+    # Use the max_results value from session state if available, otherwise use the default
+    max_results = st.session_state.get('max_results', MAX_RESULTS)
+    
     # Check if vector store is available
     if vector_store is None:
         return "Please upload a knowledge base file first."
@@ -32,7 +36,8 @@ def get_answer(query, vector_store, llm, preprocessor):
         processed_query = preprocess_text(query)
         q_type = extract_question_type(query)
         
-        relevant_docs = search_documents(processed_query, vector_store, q_type)
+        # Use the user-defined max_results value
+        relevant_docs = search_documents(processed_query, vector_store, q_type, max_results=max_results)
         
         if not relevant_docs:
             return "No relevant answers found in the knowledge base."

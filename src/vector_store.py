@@ -27,7 +27,7 @@ def create_vector_store(docs):
         print(f"Error creating vector store: {str(e)}")
         raise
 
-def search_documents(query, vector_store, q_type, k=5):
+def search_documents(query, vector_store, q_type, k=5, max_results=None):
     """
     Search for similar documents in the vector store.
     
@@ -36,6 +36,7 @@ def search_documents(query, vector_store, q_type, k=5):
         vector_store: FAISS vector store
         q_type: Question type
         k: Number of documents to retrieve
+        max_results: Maximum number of results to return (defaults to MAX_RESULTS from config)
         
     Returns:
         List of relevant Document objects
@@ -54,7 +55,9 @@ def search_documents(query, vector_store, q_type, k=5):
         if not filtered_docs:
             filtered_docs = [doc for doc, score in docs if score < SIMILARITY_THRESHOLD]
         
-        return filtered_docs[:MAX_RESULTS]  # Return top results based on config
+        # Use the provided max_results parameter if available, otherwise fall back to config value
+        max_results = max_results or MAX_RESULTS
+        return filtered_docs[:max_results]  # Return top results based on user setting or config
     except Exception as e:
         print(f"Error in search_documents: {str(e)}")
         return []  # Return empty list on error
