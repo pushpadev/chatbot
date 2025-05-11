@@ -5,6 +5,8 @@ Handles data loading, preprocessing, and document creation.
 import pandas as pd
 import nltk
 import streamlit as st
+import os
+from typing import List, Dict, Any, Optional, Union
 
 # Try to load NLTK components with proper error handling
 try:
@@ -98,4 +100,102 @@ def load_data(file_path):
         return documents
     except Exception as e:
         print(f"Error in load_data: {str(e)}")
+        raise
+
+def save_uploaded_file(uploaded_file):
+    """
+    Save an uploaded file to disk and return the file path.
+    
+    Args:
+        uploaded_file: UploadedFile object from Streamlit
+        
+    Returns:
+        Path to the saved file
+    """
+    try:
+        # Create data directory if it doesn't exist
+        os.makedirs("data/uploads", exist_ok=True)
+        
+        # Save the file
+        file_path = os.path.join("data/uploads", uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+            
+        return file_path
+    except Exception as e:
+        print(f"Error saving uploaded file: {str(e)}")
+        raise
+
+def process_file_with_db(db_wrapper, uploaded_file, uploader="SYSTEM"):
+    """
+    Process an uploaded file and store its data in the database.
+    
+    Args:
+        db_wrapper: DatabaseWrapper instance
+        uploaded_file: UploadedFile object from Streamlit
+        uploader: Name of the uploader (default: "SYSTEM")
+        
+    Returns:
+        file_id: ID of the processed file
+    """
+    try:
+        # Add file entry to database
+        file_id = db_wrapper.add_file(
+            filename=uploaded_file.name,
+            file_size=uploaded_file.size,
+            file_type=uploaded_file.type,
+            uploaded_by=uploader
+        )
+        
+        # Load documents from file
+        documents = load_data(uploaded_file)
+        
+        # Convert documents to the format expected by the database
+        db_documents = []
+        for doc in documents:
+            db_documents.append({
+                'page_content': doc.page_content,
+                'metadata': doc.metadata
+            })
+        
+        # Store documents in database
+        db_wrapper.add_documents(file_id, db_documents)
+        
+        # Update file status
+        db_wrapper.update_file_status(file_id, "completed")
+        
+        return file_id, documents
+    except Exception as e:
+        # Update file status to error if an exception occurs
+        if 'file_id' in locals():
+            db_wrapper.update_file_status(file_id, "error")
+        print(f"Error processing file with database: {str(e)}")
+        raise
+
+def get_documents_from_db(db_wrapper, file_id):
+    """
+    Get documents from the database and convert them to Document objects.
+    
+    Args:
+        db_wrapper: DatabaseWrapper instance
+        file_id: ID of the file
+        
+    Returns:
+        List of Document objects
+    """
+    try:
+        # Get documents from database
+        db_documents = db_wrapper.get_documents_by_file_id(file_id)
+        
+        # Convert to Document objects
+        documents = []
+        for doc in db_documents:
+            documents.append(Document(
+                page_content=doc['content'],
+                metadata=doc['metadata']
+            ))
+        
+        return documents
+    except Exception as e:
+        print(f"Error getting documents from database: {str(e)}")
         raise

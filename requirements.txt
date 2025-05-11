@@ -7,3 +7,5 @@ langchain-community==0.0.13
 langchain-huggingface==0.0.3
 faiss-cpu==1.7.4
 sentence-transformers==2.2.2
+python-dotenv==1.0.0
+numpy==1.24.3
