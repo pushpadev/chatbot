@@ -4,7 +4,7 @@ Answer generation module for the chatbot application.
 import streamlit as st
 from src.config import USE_GPT4ALL, MAX_RESULTS, SIMILARITY_THRESHOLD, TYPE_MATCH_THRESHOLD
 
-def get_answer(query, vector_store, llm, preprocessor, search_multiple=False):
+def get_answer(query, vector_store, llm, preprocessor, search_multiple=False, db_wrapper=None):
     """
     Generate an answer for a user query.
     
@@ -14,6 +14,7 @@ def get_answer(query, vector_store, llm, preprocessor, search_multiple=False):
         llm: Language model
         preprocessor: Module containing preprocessing functions
         search_multiple: Whether to search in multiple vector stores
+        db_wrapper: Database wrapper instance to retrieve filenames
         
     Returns:
         Generated answer text
@@ -60,6 +61,13 @@ def get_answer(query, vector_store, llm, preprocessor, search_multiple=False):
         if not relevant_docs:
             return "No relevant answers found in the knowledge base."
         
+        # Create a mapping of file_id to filename for display purposes
+        file_id_to_name = {}
+        if db_wrapper and search_multiple:
+            files = db_wrapper.get_all_files()
+            for file in files:
+                file_id_to_name[file['id']] = file['filename']
+        
         # If GPT4All is disabled, just return the top answers directly
         if not USE_GPT4ALL or llm is None:
             response = "Top Matching Answers:\n\n"
@@ -71,7 +79,8 @@ def get_answer(query, vector_store, llm, preprocessor, search_multiple=False):
                 # Add source file information if available
                 if search_multiple and 'file_id' in doc.metadata:
                     file_id = doc.metadata['file_id']
-                    response += f"Source: File ID {file_id}\n\n"
+                    filename = file_id_to_name.get(file_id, f"File ID {file_id}")
+                    response += f"Source: {filename}\n\n"
             
             return response
         
@@ -83,7 +92,8 @@ def get_answer(query, vector_store, llm, preprocessor, search_multiple=False):
             # Add source file information if available
             if search_multiple and 'file_id' in d.metadata:
                 file_id = d.metadata['file_id']
-                context_part += f" (Source: File ID {file_id})"
+                filename = file_id_to_name.get(file_id, f"File ID {file_id}")
+                context_part += f" (Source: {filename})"
             context_parts.append(context_part)
         
         context = "\n".join(context_parts)

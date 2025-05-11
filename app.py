@@ -190,7 +190,8 @@ def process_question():
                     active_vector_stores, 
                     st.session_state.llm,
                     preprocessor=None,
-                    search_multiple=True
+                    search_multiple=True,
+                    db_wrapper=st.session_state.db_wrapper
                 )
                 print(f"Answer generated. Length: {len(answer)}")
                 
