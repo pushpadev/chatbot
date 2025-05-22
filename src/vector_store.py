@@ -82,13 +82,42 @@ def load_vector_stores_from_db(db_wrapper):
         Dictionary of {file_id: vector_store}
     """
     try:
+        print("Starting to load vector stores from database...")  # Debug log
         vector_stores = {}
-        for vector_store_id, file_id, vector_store in db_wrapper.get_all_vector_stores():
-            vector_stores[file_id] = vector_store
         
+        # Get all vector stores from database
+        stores = db_wrapper.get_all_vector_stores()
+        print(f"Retrieved {len(stores)} vector stores from database")  # Debug log
+        
+        for vector_store_id, file_id, vector_store in stores:
+            try:
+                print(f"Processing vector store {vector_store_id} for file {file_id}")  # Debug log
+                print(f"Vector store type: {type(vector_store)}")  # Debug log
+                
+                # Verify vector store has required attributes
+                if not hasattr(vector_store, 'similarity_search_with_score'):
+                    print(f"Warning: Vector store {vector_store_id} missing similarity_search_with_score method")
+                    continue
+                    
+                if not hasattr(vector_store, 'index_to_docstore_id'):
+                    print(f"Warning: Vector store {vector_store_id} missing index_to_docstore_id attribute")
+                    continue
+                
+                print(f"Vector store {vector_store_id} has {len(vector_store.index_to_docstore_id)} embeddings")  # Debug log
+                vector_stores[file_id] = vector_store
+                
+            except Exception as e:
+                print(f"Error processing vector store {vector_store_id}: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                continue
+        
+        print(f"Successfully loaded {len(vector_stores)} vector stores")  # Debug log
         return vector_stores
     except Exception as e:
         print(f"Error loading vector stores from database: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {}
 
 def load_vector_store_for_file(db_wrapper, file_id):

@@ -74,6 +74,21 @@ class DatabaseWrapper:
         )
         ''')
         
+        # Create commands table to store executable commands
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS commands (
+            id TEXT PRIMARY KEY,
+            description TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            created_by TEXT DEFAULT 'SYSTEM',
+            status TEXT DEFAULT 'active',
+            last_executed TIMESTAMP,
+            execution_count INTEGER DEFAULT 0,
+            metadata TEXT
+        )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -309,6 +324,125 @@ class DatabaseWrapper:
         
         # Delete file
         cursor.execute('DELETE FROM files WHERE id = ?', (file_id,))
+        
+        conn.commit()
+        conn.close()
+
+    def add_command(self, description: str, file_path: str, created_by: str = 'SYSTEM', metadata: dict = None) -> str:
+        """
+        Add a new command to the database.
+        
+        Args:
+            description: Natural language description of the command
+            file_path: Path to the execution file
+            created_by: User who created the command
+            metadata: Additional metadata as dictionary
+            
+        Returns:
+            Command ID
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        command_id = str(uuid.uuid4())
+        created_at = datetime.now().isoformat()
+        metadata_json = json.dumps(metadata) if metadata else None
+        
+        cursor.execute('''
+        INSERT INTO commands (id, description, file_path, created_at, created_by, metadata)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''', (command_id, description, file_path, created_at, created_by, metadata_json))
+        
+        conn.commit()
+        conn.close()
+        
+        return command_id
+    
+    def get_command(self, command_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get command details by ID.
+        
+        Args:
+            command_id: Command ID
+            
+        Returns:
+            Command details as dictionary or None if not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM commands WHERE id = ?', (command_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row:
+            return {
+                'id': row[0],
+                'description': row[1],
+                'file_path': row[2],
+                'created_at': row[3],
+                'created_by': row[4],
+                'status': row[5],
+                'last_executed': row[6],
+                'execution_count': row[7],
+                'metadata': json.loads(row[8]) if row[8] else None
+            }
+        return None
+    
+    def search_commands(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search commands by description using SQL LIKE.
+        
+        Args:
+            query: Search query
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching commands
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        search_pattern = f'%{query}%'
+        cursor.execute('''
+        SELECT * FROM commands 
+        WHERE description LIKE ? AND status = 'active'
+        ORDER BY execution_count DESC, created_at DESC
+        LIMIT ?
+        ''', (search_pattern, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [{
+            'id': row[0],
+            'description': row[1],
+            'file_path': row[2],
+            'created_at': row[3],
+            'created_by': row[4],
+            'status': row[5],
+            'last_executed': row[6],
+            'execution_count': row[7],
+            'metadata': json.loads(row[8]) if row[8] else None
+        } for row in rows]
+    
+    def update_command_execution(self, command_id: str) -> None:
+        """
+        Update command execution statistics.
+        
+        Args:
+            command_id: Command ID
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute('''
+        UPDATE commands 
+        SET last_executed = ?, execution_count = execution_count + 1
+        WHERE id = ?
+        ''', (now, command_id))
         
         conn.commit()
         conn.close()

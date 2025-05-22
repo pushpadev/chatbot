@@ -3,113 +3,105 @@ Answer generation module for the chatbot application.
 """
 import streamlit as st
 from src.config import USE_GPT4ALL, MAX_RESULTS, SIMILARITY_THRESHOLD, TYPE_MATCH_THRESHOLD
+from src.command_manager import show_command_execution_ui
+from src.vector_store import search_documents, search_documents_in_multiple_stores
+from src.data_processor import extract_question_type, preprocess_text
+from typing import Dict, Any, Optional
 
-def get_answer(query, vector_store, llm, preprocessor, search_multiple=False, db_wrapper=None):
+def get_answer(query: str, vector_stores: Dict[str, Any], llm=None, preprocessor=None, search_multiple=True, db_wrapper=None) -> Optional[str]:
     """
-    Generate an answer for a user query.
+    Generate an answer for the given query.
     
     Args:
-        query: User question
-        vector_store: FAISS vector store or dictionary of vector stores
-        llm: Language model
-        preprocessor: Module containing preprocessing functions
-        search_multiple: Whether to search in multiple vector stores
-        db_wrapper: Database wrapper instance to retrieve filenames
+        query: The question to answer
+        vector_stores: Dictionary of vector stores to search in
+        llm: Optional language model for answer generation
+        preprocessor: Optional text preprocessor
+        search_multiple: Whether to search in multiple stores
+        db_wrapper: Database wrapper instance for command search
         
     Returns:
-        Generated answer text
+        Answer string or None if command UI should be shown
     """
-    # Import these functions from their respective modules
-    from src.data_processor import preprocess_text, extract_question_type
-    from src.vector_store import search_documents, search_documents_in_multiple_stores
+    print(f"Processing query: '{query}'")  # Debug log
     
-    # Use the max_results value from session state if available, otherwise use the default
-    max_results = st.session_state.get('max_results', MAX_RESULTS)
+    # First check if query matches any commands
+    if db_wrapper:
+        print("Searching for matching commands...")  # Debug log
+        commands = db_wrapper.search_commands(query, limit=1)
+        if commands:
+            print(f"Found matching command: {commands[0]['description']}")  # Debug log
+            # Add command message to chat
+            st.session_state.messages.append({
+                'type': 'bot',
+                'content': f"I found a command that matches your request: {commands[0]['description']}",
+                'command': commands[0],  # Store command data in message
+                'needs_confirmation': True  # Flag to show confirmation UI
+            })
+            return None
+        else:
+            print("No matching commands found")  # Debug log
     
-    # Check if vector store is available
-    if vector_store is None or (isinstance(vector_store, dict) and not vector_store):
-        return "Please upload a knowledge base file first."
-    
-    # Check if language model is available if GPT4ALL is enabled
-    if USE_GPT4ALL and llm is None:
-        return "Language model is not available. Please check if GPT4All is properly installed."
-    
+    # If no command match, proceed with Q&A
     try:
+        print("Proceeding with Q&A search...")  # Debug log
+        
+        # Process query and get question type
         processed_query = preprocess_text(query)
         q_type = extract_question_type(query)
+        print(f"Question type: {q_type}")  # Debug log
+        
+        # Get max results from session state or use default
+        max_results = st.session_state.get('max_results', MAX_RESULTS)
         
         # Search for relevant documents
-        if search_multiple and isinstance(vector_store, dict):
-            # Search across multiple vector stores
-            relevant_docs = search_documents_in_multiple_stores(
-                processed_query, vector_store, q_type, max_results=max_results
+        if search_multiple:
+            docs = search_documents_in_multiple_stores(
+                processed_query, 
+                vector_stores,
+                q_type,
+                k=5,  # Use k=5 like in original version
+                max_results=max_results
             )
         else:
-            # Search in a single vector store (legacy mode)
-            if isinstance(vector_store, dict) and len(vector_store) == 1:
-                # If there's only one vector store in the dictionary, use it
-                single_vector_store = next(iter(vector_store.values()))
-                relevant_docs = search_documents(
-                    processed_query, single_vector_store, q_type, max_results=max_results
-                )
-            else:
-                # If it's a single vector store object
-                relevant_docs = search_documents(
-                    processed_query, vector_store, q_type, max_results=max_results
-                )
+            docs = search_documents(
+                processed_query, 
+                next(iter(vector_stores.values())),
+                q_type,
+                k=5,  # Use k=5 like in original version
+                max_results=max_results
+            )
         
-        if not relevant_docs:
-            return "No relevant answers found in the knowledge base."
+        if not docs:
+            return "I couldn't find any relevant information to answer your question."
         
-        # Create a mapping of file_id to filename for display purposes
-        file_id_to_name = {}
-        if db_wrapper and search_multiple:
-            files = db_wrapper.get_all_files()
-            for file in files:
-                file_id_to_name[file['id']] = file['filename']
+        # Prepare context from all relevant documents
+        context = "\n".join([
+            f"Q: {doc.metadata['original_question']}\nA: {doc.metadata['answer']}" 
+            for doc in docs[:3]  # Use top 3 documents like in original version
+        ])
         
-        # If GPT4All is disabled, just return the top answers directly
-        if not USE_GPT4ALL or llm is None:
-            response = "Top Matching Answers:\n\n"
-            for i, doc in enumerate(relevant_docs):
-                response += f"Answer {i+1}:\n"
-                response += f"Q: {doc.metadata['original_question']}\n"
-                response += f"A: {doc.metadata['answer']}\n\n"
-                
-                # Add source file information if available
-                if search_multiple and 'file_id' in doc.metadata:
-                    file_id = doc.metadata['file_id']
-                    filename = file_id_to_name.get(file_id, f"File ID {file_id}")
-                    response += f"Source: {filename}\n\n"
+        # If using GPT4All, generate answer
+        if llm:
+            # Generate answer using LLM with the same prompt format as original
+            prompt = f"""
+            Answer this {q_type} question using the context below:
             
-            return response
-        
-        # If GPT4All is enabled, use it to generate a response
-        # Create context from relevant documents
-        context_parts = []
-        for d in relevant_docs:
-            context_part = f"Q: {d.metadata['original_question']}\nA: {d.metadata['answer']}"
-            # Add source file information if available
-            if search_multiple and 'file_id' in d.metadata:
-                file_id = d.metadata['file_id']
-                filename = file_id_to_name.get(file_id, f"File ID {file_id}")
-                context_part += f" (Source: {filename})"
-            context_parts.append(context_part)
-        
-        context = "\n".join(context_parts)
-        
-        # Create prompt for the language model
-        prompt = f"""
-        Answer this {q_type} question using the context below:
-        
-        Context:
-        {context}
+            Context:
+            {context}
 
-        Question: {query}
-        Answer clearly and concisely.
-        """
+            Question: {query}
+            Answer clearly and concisely.
+            """
+            
+            response = llm.generate(prompt, temp=0.1, max_tokens=250)  # Use same parameters as original
+            return response.strip()
         
-        return llm.generate(prompt, temp=0.1, max_tokens=250)
+        # If not using LLM, return the most relevant document's answer
+        return docs[0].metadata['answer']
         
     except Exception as e:
+        print(f"Error generating answer: {str(e)}")
+        import traceback
+        print(traceback.format_exc())  # Print full traceback
         return f"Error generating answer: {str(e)}"

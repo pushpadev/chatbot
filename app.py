@@ -24,6 +24,7 @@ from src.ui import (
     show_file_uploader, show_file_processing_status, render_file_info
 )
 from src.db_wrapper import DatabaseWrapper
+from src.command_manager import show_command_modal
 
 # Only import GPT4All if it's enabled
 if USE_GPT4ALL:
@@ -69,6 +70,8 @@ def init_session_state():
                     st.warning("Running in direct answer mode (GPT4All model not found).")
             except Exception as e:
                 st.info("Running in direct answer mode.")
+    if 'show_add_command' not in st.session_state:
+        st.session_state.show_add_command = False
 
 def process_uploaded_files(uploaded_files):
     """Process uploaded files and create vector stores."""
@@ -129,12 +132,27 @@ def load_existing_vector_stores():
         with st.spinner("Loading existing knowledge base..."):
             try:
                 # Load vector stores from database
+                print("Loading vector stores from database...")  # Debug log
                 vector_stores = load_vector_stores_from_db(db_wrapper)
+                print(f"Loaded {len(vector_stores)} vector stores")  # Debug log
+                
+                # Debug each vector store
+                for file_id, store in vector_stores.items():
+                    try:
+                        print(f"Vector store for file {file_id}:")
+                        print(f"  Type: {type(store)}")
+                        print(f"  Has index: {hasattr(store, 'index_to_docstore_id')}")
+                        if hasattr(store, 'index_to_docstore_id'):
+                            print(f"  Number of embeddings: {len(store.index_to_docstore_id)}")
+                    except Exception as e:
+                        print(f"  Error inspecting vector store: {str(e)}")
+                
                 st.session_state.vector_stores = vector_stores
                 
                 # If files were loaded, set the first one as active
                 if vector_stores and not st.session_state.active_file_id:
                     st.session_state.active_file_id = next(iter(vector_stores))
+                    print(f"Set active file ID to: {st.session_state.active_file_id}")  # Debug log
                 
                 # Print debug info
                 print(f"Loaded {len(vector_stores)} vector stores from database")
@@ -163,6 +181,52 @@ def get_active_vector_stores():
             active_stores[file_id] = vector_store
     
     return active_stores
+
+def show_sidebar():
+    """Show sidebar with file upload and command management."""
+    with st.sidebar:
+        # Title
+        st.title("📚 Knowledge Base")
+        
+        # File Upload Section
+        st.markdown("### 📁 Upload Q&A File")
+        uploaded_files = show_file_uploader(st.session_state.db_wrapper)
+        if uploaded_files:
+            processed_files = process_uploaded_files(uploaded_files)
+        
+        # Command Management Section
+        st.markdown("---")
+        st.markdown("### ⚙️ Command Management")
+        
+        # Add Command Button
+        if st.button("➕ Add New Command", use_container_width=True):
+            st.session_state.show_command_form = True
+            st.rerun()
+        
+        # Command Form
+        if st.session_state.get('show_command_form', False):
+            command_id = show_command_modal(st.session_state.db_wrapper)
+            if command_id:
+                st.session_state.show_command_form = False
+                st.rerun()
+        
+        # List of Commands
+        commands = st.session_state.db_wrapper.search_commands("", limit=10)
+        if commands:
+            st.markdown("#### Recent Commands")
+            for cmd in commands:
+                # Command Card - only show description and file
+                st.markdown(f"**🔧 {cmd['description']}**")
+                st.markdown(f"*File:* {os.path.basename(cmd['file_path'])}")
+                
+                # Execute Button
+                if st.button("Execute Command", key=f"exec_{cmd['id']}", use_container_width=True):
+                    st.session_state.pending_command = cmd['id']
+                    st.rerun()
+                
+                st.markdown("---")
+        else:
+            st.info("No commands added yet. Click 'Add New Command' to create one.")
 
 def process_question():
     """Process a pending question and generate an answer."""
@@ -193,8 +257,14 @@ def process_question():
                     search_multiple=True,
                     db_wrapper=st.session_state.db_wrapper
                 )
-                print(f"Answer generated. Length: {len(answer)}")
+                print(f"Answer generated. Length: {len(answer) if answer else 0}")
                 
+                # If answer is None, it means command UI was shown
+                if answer is None:
+                    st.session_state.processing = False
+                    st.session_state.pending_question = None
+                    return
+            
             response_time = time.time() - start_time
             
             # Add assistant response
@@ -215,7 +285,6 @@ def process_question():
         finally:
             st.session_state.processing = False
             st.session_state.pending_question = None
-            print("Question processing complete, triggering rerun")
             st.rerun()
 
 def main():
@@ -226,18 +295,14 @@ def main():
     # Set up the UI
     setup_ui()
     
+    # Show sidebar with file and command management
+    show_sidebar()
+    
     # Debug info
     print(f"Session state keys: {list(st.session_state.keys())}")
     
     # Load existing vector stores from database
     load_existing_vector_stores()
-    
-    # Show file uploader and existing files in sidebar
-    uploaded_files = show_file_uploader(st.session_state.db_wrapper)
-    
-    # Process uploaded files if any
-    if uploaded_files:
-        processed_files = process_uploaded_files(uploaded_files)
     
     # Display chat messages
     render_chat_messages(st.session_state.messages)

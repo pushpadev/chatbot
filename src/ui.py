@@ -6,6 +6,7 @@ import streamlit as st
 import time
 from datetime import datetime
 from src.config import CHAT_TITLE, MAX_RESULTS
+import os
 
 def setup_ui():
     """Set up the title and add basic CSS."""
@@ -71,25 +72,71 @@ def setup_ui():
     """, unsafe_allow_html=True)
 
 def render_chat_messages(messages):
-    """
-    Render the chat messages.
-    
-    Args:
-        messages: List of message dictionaries
-    """
-    for msg in messages:
-        if msg['type'] == 'user':
-            st.markdown(
-                f"<div class='user-message'>👤 <b>You</b><br>{msg['content']}</div>", 
-                unsafe_allow_html=True
-            )
+    """Render chat messages with support for command UI."""
+    for message in messages:
+        if message['type'] == 'user':
+            with st.chat_message("user"):
+                st.write(message['content'])
         else:
-            response_time = msg.get('response_time')
-            time_text = f"<small style='color:gray;'>⏱ {response_time:.1f}s</small>" if response_time else ""
-            st.markdown(
-                f"<div class='bot-message'>🤖 <b>Assistant</b><br>{msg['content']}<br>{time_text}</div>", 
-                unsafe_allow_html=True
-            )
+            with st.chat_message("assistant"):
+                st.write(message['content'])
+                
+                # If this is a command message, show the command UI
+                if 'command' in message:
+                    command = message['command']
+                    
+                    # Initialize confirmation state if not exists
+                    if 'command_confirmed' not in st.session_state:
+                        st.session_state.command_confirmed = False
+                    
+                    # If command needs confirmation and not yet confirmed
+                    if message.get('needs_confirmation', True) and not st.session_state.command_confirmed:
+                        st.warning("⚠️ This command requires confirmation before execution")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Confirm Execution", key=f"confirm_{command['id']}"):
+                                st.session_state.command_confirmed = True
+                                st.rerun()
+                        with col2:
+                            if st.button("❌ Cancel", key=f"cancel_{command['id']}"):
+                                st.session_state.command_confirmed = False
+                                st.rerun()
+                    else:
+                        # Show execution buttons
+                        st.markdown("#### Command Execution")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("▶️ Execute Command", type="primary", key=f"exec_{command['id']}"):
+                                with st.spinner("Executing command..."):
+                                    from src.command_manager import execute_command
+                                    success, message = execute_command(command['id'], st.session_state.db_wrapper)
+                                    
+                                    if success:
+                                        st.success("✅ Command executed successfully!")
+                                        if message:
+                                            st.code(message, language="text")
+                                    else:
+                                        st.error(f"❌ Command execution failed: {message}")
+                                
+                                # Reset confirmation state
+                                st.session_state.command_confirmed = False
+                                st.rerun()
+                        
+                        with col2:
+                            if st.button("❌ Cancel", key=f"cancel_exec_{command['id']}"):
+                                st.session_state.command_confirmed = False
+                                st.rerun()
+                        
+                        # Show command details
+                        with st.expander("📋 Command Details"):
+                            st.markdown(f"**File:** `{os.path.basename(command['file_path'])}`")
+                            if command.get('metadata'):
+                                st.markdown("**Settings:**")
+                                st.json(command['metadata'])
+                
+                # Show response time if available
+                if 'response_time' in message:
+                    st.caption(f"Response time: {message['response_time']:.2f}s")
 
 def show_typing_indicator():
     """Show a typing indicator while the bot is processing."""
