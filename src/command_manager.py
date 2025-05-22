@@ -189,12 +189,12 @@ def show_command_modal(db_wrapper) -> Optional[str]:
                 help="Ask for confirmation before executing the command"
             )
         
-        # Form buttons
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            submitted = st.form_submit_button("Add Command")
-        with col2:
-            if st.form_submit_button("Cancel"):
+        # Form buttons - horizontal layout, short label
+        button_col1, button_col2 = st.columns([1, 1])
+        with button_col1:
+            submitted = st.form_submit_button("Add", use_container_width=True)
+        with button_col2:
+            if st.form_submit_button("Cancel", use_container_width=True):
                 st.session_state.show_command_form = False
                 st.rerun()
         

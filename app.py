@@ -199,7 +199,7 @@ def show_sidebar():
         st.markdown("### ⚙️ Command Management")
         
         # Add Command Button
-        if st.button("➕ Add New Command", use_container_width=True):
+        if st.button("➕ Add Command", use_container_width=True):
             st.session_state.show_command_form = True
             st.rerun()
         
@@ -215,18 +215,25 @@ def show_sidebar():
         if commands:
             st.markdown("#### Recent Commands")
             for cmd in commands:
-                # Command Card - only show description and file
-                st.markdown(f"**🔧 {cmd['description']}**")
-                st.markdown(f"*File:* {os.path.basename(cmd['file_path'])}")
-                
-                # Execute Button
-                if st.button("Execute Command", key=f"exec_{cmd['id']}", use_container_width=True):
-                    st.session_state.pending_command = cmd['id']
-                    st.rerun()
-                
-                st.markdown("---")
+                # Create a container for each command
+                with st.container():
+                    # Command info in first row
+                    st.markdown(f"**🔧 {cmd['description']}**")
+                    st.markdown(f"*File:* {os.path.basename(cmd['file_path'])}")
+                    
+                    # Create two columns for buttons in second row
+                    col1, col2 = st.columns([1, 1])
+                    
+                    # Execute button in first column
+                    with col1:
+                        if st.button("Execute", key=f"exec_{cmd['id']}", use_container_width=True):
+                            st.session_state.pending_command = cmd['id']
+                            st.rerun()
+                    
+                    # Add a divider between commands
+                    st.markdown("---")
         else:
-            st.info("No commands added yet. Click 'Add New Command' to create one.")
+            st.info("No commands added yet. Click 'Add Command' to create one.")
 
 def process_question():
     """Process a pending question and generate an answer."""
