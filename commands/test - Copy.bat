@@ -4,13 +4,6 @@ set "batch_dir=%~dp0"
 set "output_file=%batch_dir%system_info_%date:~-4,4%%date:~-10,2%%date:~-7,2%_%time:~0,2%%time:~3,2%%time:~6,2%.txt"
 set "output_file=%output_file: =0%"
 
-REM Check if we can write to the directory
-if not exist "%batch_dir%" (
-    echo Error: Cannot access directory: %batch_dir%
-    pause
-    exit /b 1
-)
-
 echo Creating report in: %batch_dir%
 echo =============================================== > "%output_file%"
 echo System Information Report - %date% %time% >> "%output_file%"
@@ -39,5 +32,3 @@ if exist "%output_file%" (
 ) else (
     echo Error: Failed to create report file
 )
-
-pause 
