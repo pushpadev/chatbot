@@ -55,30 +55,48 @@ def execute_command(command_id: str, db_wrapper) -> Tuple[bool, str]:
     Returns:
         Tuple of (success, message)
     """
+    print(f"Starting command execution for ID: {command_id}")  # Debug log
+    
     # Get command details
     command = db_wrapper.get_command(command_id)
     if not command:
+        print(f"Command not found with ID: {command_id}")  # Debug log
         return False, "Command not found"
+    
+    print(f"Found command: {command['description']}")  # Debug log
+    print(f"Command file path: {command['file_path']}")  # Debug log
     
     # Validate command file
     is_valid, error_msg = validate_command_file(command['file_path'])
     if not is_valid:
+        print(f"Command file validation failed: {error_msg}")  # Debug log
         return False, f"Invalid command file: {error_msg}"
+    
+    print("Command file validation passed")
     
     try:
         # Execute the command
+        print(f"Executing command: {command['file_path']}")  # Debug log
         process = subprocess.Popen(
             command['file_path'],
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            cwd=os.path.dirname(command['file_path'])  # Set working directory to command file location
         )
         
         # Wait for command to complete with timeout
         try:
+            print("Waiting for command to complete...")  # Debug log
             stdout, stderr = process.communicate(timeout=30)
             success = process.returncode == 0
+            
+            print(f"Command completed with return code: {process.returncode}")  # Debug log
+            if stdout:
+                print(f"Command stdout: {stdout}")  # Debug log
+            if stderr:
+                print(f"Command stderr: {stderr}")  # Debug log
             
             # Update execution statistics
             db_wrapper.update_command_execution(command_id)
@@ -89,10 +107,12 @@ def execute_command(command_id: str, db_wrapper) -> Tuple[bool, str]:
                 return False, stderr if stderr else "Command failed"
                 
         except subprocess.TimeoutExpired:
+            print("Command execution timed out")  # Debug log
             process.kill()
             return False, "Command execution timed out"
             
     except Exception as e:
+        print(f"Error executing command: {str(e)}")  # Debug log
         return False, f"Error executing command: {str(e)}"
 
 def create_command_form() -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
@@ -141,6 +161,30 @@ def create_command_form() -> Tuple[Optional[str], Optional[Dict[str, Any]], Opti
     
     return description, metadata, uploaded_file
 
+def create_demo_commands(db_wrapper) -> None:
+    """
+    Create demo commands for testing.
+    
+    Args:
+        db_wrapper: Database wrapper instance
+    """
+    # System Info Command
+    system_info_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "commands", "system_info.bat")
+    if os.path.exists(system_info_path):
+        try:
+            db_wrapper.add_command(
+                description="Show system information including OS details and network configuration",
+                file_path=system_info_path,
+                created_by="SYSTEM",
+                metadata={
+                    'timeout': 30,
+                    'requires_confirmation': True
+                }
+            )
+            print("Added system info demo command")
+        except Exception as e:
+            print(f"Error adding system info command: {str(e)}")
+
 def show_command_modal(db_wrapper) -> Optional[str]:
     """
     Show a form for adding a new command using Streamlit's native components.
@@ -151,6 +195,12 @@ def show_command_modal(db_wrapper) -> Optional[str]:
     Returns:
         Command ID if command was added, None otherwise
     """
+    # Add demo commands button
+    if st.button("Add Demo Commands"):
+        create_demo_commands(db_wrapper)
+        st.success("Demo commands added successfully!")
+        st.rerun()
+    
     st.markdown("### Add New Command")
     
     # Create form

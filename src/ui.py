@@ -73,7 +73,7 @@ def setup_ui():
 
 def render_chat_messages(messages):
     """Render chat messages with support for command UI."""
-    for message in messages:
+    for idx, message in enumerate(messages):
         if message['type'] == 'user':
             with st.chat_message("user"):
                 st.write(message['content'])
@@ -84,55 +84,77 @@ def render_chat_messages(messages):
                 # If this is a command message, show the command UI
                 if 'command' in message:
                     command = message['command']
+                    print(f"Rendering command UI for command: {command['description']}")  # Debug log
                     
                     # Initialize confirmation state if not exists
                     if 'command_confirmed' not in st.session_state:
                         st.session_state.command_confirmed = False
+                        print("Initialized command_confirmed state to False")  # Debug log
                     
                     # If command needs confirmation and not yet confirmed
                     if message.get('needs_confirmation', True) and not st.session_state.command_confirmed:
+                        print("Showing confirmation UI")  # Debug log
                         st.warning("⚠️ This command requires confirmation before execution")
                         col1, col2 = st.columns(2)
                         with col1:
-                            if st.button("✅ Confirm Execution", key=f"confirm_{command['id']}"):
+                            if st.button("✅ Confirm Execution", key=f"confirm_{command['id']}_{idx}"):
+                                print(f"Confirmation button clicked for command: {command['id']}")  # Debug log
                                 st.session_state.command_confirmed = True
+                                print("Set command_confirmed to True")  # Debug log
                                 st.rerun()
                         with col2:
-                            if st.button("❌ Cancel", key=f"cancel_{command['id']}"):
+                            if st.button("❌ Cancel", key=f"cancel_{command['id']}_{idx}"):
+                                print(f"Cancel button clicked for command: {command['id']}")  # Debug log
                                 st.session_state.command_confirmed = False
+                                print("Set command_confirmed to False")  # Debug log
                                 st.rerun()
                     else:
                         # Show execution buttons
+                        print(f"Showing execution UI. command_confirmed: {st.session_state.command_confirmed}")  # Debug log
                         st.markdown("#### Command Execution")
                         col1, col2 = st.columns(2)
                         with col1:
-                            if st.button("▶️ Execute Command", type="primary", key=f"exec_{command['id']}"):
-                                with st.spinner("Executing command..."):
-                                    from src.command_manager import execute_command
-                                    success, message = execute_command(command['id'], st.session_state.db_wrapper)
-                                    
-                                    if success:
-                                        st.success("✅ Command executed successfully!")
-                                        if message:
-                                            st.code(message, language="text")
-                                    else:
-                                        st.error(f"❌ Command execution failed: {message}")
+                            exec_button = st.button("▶️ Execute Command", type="primary", key=f"exec_{command['id']}_{idx}")
+                            print(f"Execute button state: {exec_button}")  # Debug log
+                            if exec_button:
+                                print(f"Execute button clicked for command: {command['id']}")  # Debug log
+                                try:
+                                    with st.spinner("Executing command..."):
+                                        print("Calling execute_command function")  # Debug log
+                                        from src.command_manager import execute_command
+                                        success, message = execute_command(command['id'], st.session_state.db_wrapper)
+                                        print(f"Command execution result - success: {success}, message: {message}")  # Debug log
+                                        
+                                        if success:
+                                            st.success("✅ Command executed successfully!")
+                                            if message:
+                                                st.code(message, language="text")
+                                        else:
+                                            st.error(f"❌ Command execution failed: {message}")
+                                except Exception as e:
+                                    print(f"Error during command execution: {str(e)}")  # Debug log
+                                    st.error(f"Error executing command: {str(e)}")
                                 
                                 # Reset confirmation state
                                 st.session_state.command_confirmed = False
+                                print("Reset command_confirmed to False")  # Debug log
                                 st.rerun()
                         
                         with col2:
-                            if st.button("❌ Cancel", key=f"cancel_exec_{command['id']}"):
+                            if st.button("❌ Cancel", key=f"cancel_exec_{command['id']}_{idx}"):
+                                print(f"Cancel execution button clicked for command: {command['id']}")  # Debug log
                                 st.session_state.command_confirmed = False
+                                print("Reset command_confirmed to False")  # Debug log
                                 st.rerun()
                         
                         # Show command details
                         with st.expander("📋 Command Details"):
                             st.markdown(f"**File:** `{os.path.basename(command['file_path'])}`")
+                            print(f"Command file path: {command['file_path']}")  # Debug log
                             if command.get('metadata'):
                                 st.markdown("**Settings:**")
                                 st.json(command['metadata'])
+                                print(f"Command metadata: {command['metadata']}")  # Debug log
                 
                 # Show response time if available
                 if 'response_time' in message:
