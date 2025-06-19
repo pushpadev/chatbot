@@ -85,9 +85,16 @@ class DatabaseWrapper:
             status TEXT DEFAULT 'active',
             last_executed TIMESTAMP,
             execution_count INTEGER DEFAULT 0,
-            metadata TEXT
+            metadata TEXT,
+            variables_json TEXT
         )
         ''')
+        
+        # Add variables_json column if upgrading from old schema
+        try:
+            cursor.execute('ALTER TABLE commands ADD COLUMN variables_json TEXT')
+        except Exception:
+            pass  # Ignore if already exists
         
         conn.commit()
         conn.close()
@@ -328,7 +335,7 @@ class DatabaseWrapper:
         conn.commit()
         conn.close()
 
-    def add_command(self, description: str, file_path: str, created_by: str = 'SYSTEM', metadata: dict = None) -> str:
+    def add_command(self, description: str, file_path: str, created_by: str = 'SYSTEM', metadata: dict = None, variables_json: str = None) -> str:
         """
         Add a new command to the database.
         
@@ -337,6 +344,7 @@ class DatabaseWrapper:
             file_path: Path to the execution file
             created_by: User who created the command
             metadata: Additional metadata as dictionary
+            variables_json: JSON string of variable definitions
             
         Returns:
             Command ID
@@ -347,11 +355,10 @@ class DatabaseWrapper:
         command_id = str(uuid.uuid4())
         created_at = datetime.now().isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
-        
         cursor.execute('''
-        INSERT INTO commands (id, description, file_path, created_at, created_by, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ''', (command_id, description, file_path, created_at, created_by, metadata_json))
+        INSERT INTO commands (id, description, file_path, created_at, created_by, metadata, variables_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (command_id, description, file_path, created_at, created_by, metadata_json, variables_json))
         
         conn.commit()
         conn.close()
@@ -386,7 +393,8 @@ class DatabaseWrapper:
                 'status': row[5],
                 'last_executed': row[6],
                 'execution_count': row[7],
-                'metadata': json.loads(row[8]) if row[8] else None
+                'metadata': json.loads(row[8]) if row[8] else None,
+                'variables_json': row[9] if len(row) > 9 else None
             }
         return None
     
@@ -424,7 +432,8 @@ class DatabaseWrapper:
             'status': row[5],
             'last_executed': row[6],
             'execution_count': row[7],
-            'metadata': json.loads(row[8]) if row[8] else None
+            'metadata': json.loads(row[8]) if row[8] else None,
+            'variables_json': row[9] if len(row) > 9 else None
         } for row in rows]
     
     def update_command_execution(self, command_id: str) -> None:
@@ -444,6 +453,18 @@ class DatabaseWrapper:
         WHERE id = ?
         ''', (now, command_id))
         
+        conn.commit()
+        conn.close()
+
+    def delete_command(self, command_id: str):
+        """
+        Delete a command from the database by its ID.
+        Args:
+            command_id: ID of the command
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM commands WHERE id = ?', (command_id,))
         conn.commit()
         conn.close()
 

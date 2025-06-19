@@ -183,7 +183,7 @@ def get_active_vector_stores():
     return active_stores
 
 def show_sidebar():
-    """Show sidebar with file upload and command management."""
+    """Show sidebar with file upload only (remove command management section)."""
     with st.sidebar:
         # Title
         st.title("📚 Knowledge Base")
@@ -193,47 +193,7 @@ def show_sidebar():
         uploaded_files = show_file_uploader(st.session_state.db_wrapper)
         if uploaded_files:
             processed_files = process_uploaded_files(uploaded_files)
-        
-        # Command Management Section
-        st.markdown("---")
-        st.markdown("### ⚙️ Command Management")
-        
-        # Add Command Button
-        if st.button("➕ Add Command", use_container_width=True):
-            st.session_state.show_command_form = True
-            st.rerun()
-        
-        # Command Form
-        if st.session_state.get('show_command_form', False):
-            command_id = show_command_modal(st.session_state.db_wrapper)
-            if command_id:
-                st.session_state.show_command_form = False
-                st.rerun()
-        
-        # List of Commands
-        commands = st.session_state.db_wrapper.search_commands("", limit=10)
-        if commands:
-            st.markdown("#### Recent Commands")
-            for cmd in commands:
-                # Create a container for each command
-                with st.container():
-                    # Command info in first row
-                    st.markdown(f"**🔧 {cmd['description']}**")
-                    st.markdown(f"*File:* {os.path.basename(cmd['file_path'])}")
-                    
-                    # Create two columns for buttons in second row
-                    col1, col2 = st.columns([1, 1])
-                    
-                    # Execute button in first column
-                    with col1:
-                        if st.button("Execute", key=f"exec_{cmd['id']}", use_container_width=True):
-                            st.session_state.pending_command = cmd['id']
-                            st.rerun()
-                    
-                    # Add a divider between commands
-                    st.markdown("---")
-        else:
-            st.info("No commands added yet. Click 'Add Command' to create one.")
+        # Command Management section and related UI removed
 
 def process_question():
     """Process a pending question and generate an answer."""
